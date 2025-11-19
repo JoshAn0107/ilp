@@ -5,27 +5,50 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Result of delivery path calculation containing cost, moves, and drone paths.
+ */
 public class DeliveryPathResult {
-    @JsonProperty("deliveries")
-    private final List<Delivery> deliveries;
+    @JsonProperty("totalCost")
+    private double totalCost;
 
-    @JsonProperty("flightPath")
-    private final List<DronePath> flightPath;
+    @JsonProperty("totalMoves")
+    private int totalMoves;
 
-    public DeliveryPathResult(
-            @JsonProperty("deliveries") List<Delivery> deliveries,
-            @JsonProperty("flightPath") List<DronePath> flightPath
-    ) {
-        this.deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
-        this.flightPath = flightPath != null ? List.copyOf(flightPath) : List.of();
+    @JsonProperty("dronePaths")
+    private List<DronePathInfo> dronePaths;
+
+    public DeliveryPathResult() {
     }
 
-    public List<Delivery> getDeliveries() {
-        return deliveries;
+    public DeliveryPathResult(double totalCost, int totalMoves, List<DronePathInfo> dronePaths) {
+        this.totalCost = totalCost;
+        this.totalMoves = totalMoves;
+        this.dronePaths = dronePaths != null ? List.copyOf(dronePaths) : List.of();
     }
 
-    public List<DronePath> getFlightPath() {
-        return flightPath;
+    public double getTotalCost() {
+        return totalCost;
+    }
+
+    public void setTotalCost(double totalCost) {
+        this.totalCost = totalCost;
+    }
+
+    public int getTotalMoves() {
+        return totalMoves;
+    }
+
+    public void setTotalMoves(int totalMoves) {
+        this.totalMoves = totalMoves;
+    }
+
+    public List<DronePathInfo> getDronePaths() {
+        return dronePaths;
+    }
+
+    public void setDronePaths(List<DronePathInfo> dronePaths) {
+        this.dronePaths = dronePaths;
     }
 
     @Override
@@ -33,18 +56,117 @@ public class DeliveryPathResult {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DeliveryPathResult that = (DeliveryPathResult) o;
-        return Objects.equals(deliveries, that.deliveries) &&
-                Objects.equals(flightPath, that.flightPath);
+        return Double.compare(that.totalCost, totalCost) == 0 &&
+                totalMoves == that.totalMoves &&
+                Objects.equals(dronePaths, that.dronePaths);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(deliveries, flightPath);
+        return Objects.hash(totalCost, totalMoves, dronePaths);
     }
 
     @Override
     public String toString() {
-        return String.format("DeliveryPathResult{deliveries=%d, flightPath=%d}",
-                deliveries.size(), flightPath.size());
+        return String.format("DeliveryPathResult{totalCost=%.2f, totalMoves=%d, drones=%d}",
+                totalCost, totalMoves, dronePaths != null ? dronePaths.size() : 0);
+    }
+
+    /**
+     * Information about a single drone's delivery path.
+     */
+    public static class DronePathInfo {
+        @JsonProperty("droneId")
+        private String droneId;
+
+        @JsonProperty("deliveries")
+        private List<DeliveryInfo> deliveries;
+
+        public DronePathInfo() {
+        }
+
+        public DronePathInfo(String droneId, List<DeliveryInfo> deliveries) {
+            this.droneId = droneId;
+            this.deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
+        }
+
+        public String getDroneId() {
+            return droneId;
+        }
+
+        public void setDroneId(String droneId) {
+            this.droneId = droneId;
+        }
+
+        public List<DeliveryInfo> getDeliveries() {
+            return deliveries;
+        }
+
+        public void setDeliveries(List<DeliveryInfo> deliveries) {
+            this.deliveries = deliveries;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            DronePathInfo that = (DronePathInfo) o;
+            return Objects.equals(droneId, that.droneId) &&
+                    Objects.equals(deliveries, that.deliveries);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(droneId, deliveries);
+        }
+    }
+
+    /**
+     * Information about a single delivery within a drone path.
+     */
+    public static class DeliveryInfo {
+        @JsonProperty("deliveryId")
+        private int deliveryId;
+
+        @JsonProperty("flightPath")
+        private List<LngLat> flightPath;
+
+        public DeliveryInfo() {
+        }
+
+        public DeliveryInfo(int deliveryId, List<LngLat> flightPath) {
+            this.deliveryId = deliveryId;
+            this.flightPath = flightPath != null ? List.copyOf(flightPath) : List.of();
+        }
+
+        public int getDeliveryId() {
+            return deliveryId;
+        }
+
+        public void setDeliveryId(int deliveryId) {
+            this.deliveryId = deliveryId;
+        }
+
+        public List<LngLat> getFlightPath() {
+            return flightPath;
+        }
+
+        public void setFlightPath(List<LngLat> flightPath) {
+            this.flightPath = flightPath;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            DeliveryInfo that = (DeliveryInfo) o;
+            return deliveryId == that.deliveryId &&
+                    Objects.equals(flightPath, that.flightPath);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(deliveryId, flightPath);
+        }
     }
 }

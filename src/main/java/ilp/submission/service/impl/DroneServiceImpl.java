@@ -2,7 +2,7 @@ package ilp.submission.service.impl;
 
 import ilp.submission.model.Drone;
 import ilp.submission.service.DroneService;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
@@ -23,9 +23,12 @@ public class DroneServiceImpl implements DroneService {
     private final RestTemplate restTemplate;
 
     public DroneServiceImpl(
-            @Value("${ilp.endpoint:https://ilp-rest-2025-bvh6e9hschfagrgy.ukwest-01.azurewebsites.net/}") String ilpEndpoint,
+            @Qualifier("ilpEndpoint") String ilpEndpoint,
             RestTemplate restTemplate) {
-        this.ilpEndpoint = ilpEndpoint.endsWith("/") ? ilpEndpoint : ilpEndpoint + "/";
+        // Ensure endpoint ends with /
+        this.ilpEndpoint = (ilpEndpoint != null && !ilpEndpoint.isEmpty())
+                ? (ilpEndpoint.endsWith("/") ? ilpEndpoint : ilpEndpoint + "/")
+                : "https://ilp-rest-2025-bvh6e9hschfagrgy.ukwest-01.azurewebsites.net/";
         this.restTemplate = restTemplate;
     }
 
@@ -38,11 +41,11 @@ public class DroneServiceImpl implements DroneService {
                 null,
                 new ParameterizedTypeReference<List<Drone>>() {}
         );
-        return response.getBody();
+        return response.getBody() != null ? response.getBody() : List.of();
     }
 
     @Override
-    public List<Integer> getDronesWithCooling(boolean hasCooling) {
+    public List<String> getDronesWithCooling(boolean hasCooling) {
         List<Drone> allDrones = getAllDrones();
         return allDrones.stream()
                 .filter(drone -> drone.getCapability() != null &&
@@ -52,10 +55,10 @@ public class DroneServiceImpl implements DroneService {
     }
 
     @Override
-    public Optional<Drone> getDroneById(int id) {
+    public Optional<Drone> getDroneById(String id) {
         List<Drone> allDrones = getAllDrones();
         return allDrones.stream()
-                .filter(drone -> drone.getId() == id)
+                .filter(drone -> drone.getId() != null && drone.getId().equals(id))
                 .findFirst();
     }
 }

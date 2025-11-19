@@ -42,6 +42,7 @@ public record  LngLat(
     }
 
     public LngLat nextPosition(double angleDegrees) {
+        // 0° = East, 90° = North, 180° = West, 270° = South
         double angleRadians = Math.toRadians(angleDegrees);
         double newLng = this.lng + MOVE_DISTANCE * Math.cos(angleRadians);
         double newLat = this.lat + MOVE_DISTANCE * Math.sin(angleRadians);

@@ -5,6 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
 public class DroneServicePoint {
+    @JsonProperty("id")
+    private final String id;
+
     @JsonProperty("name")
     private final String name;
 
@@ -15,13 +18,33 @@ public class DroneServicePoint {
     private final double latitude;
 
     public DroneServicePoint(
+            @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("longitude") double longitude,
             @JsonProperty("latitude") double latitude
     ) {
+        this.id = id;
         this.name = Objects.requireNonNull(name, "Name cannot be null");
         this.longitude = longitude;
         this.latitude = latitude;
+    }
+
+    // Record-style accessors
+    public String id() {
+        return id;
+    }
+
+    public String name() {
+        return name;
+    }
+
+    public LngLat location() {
+        return new LngLat(longitude, latitude);
+    }
+
+    // Traditional getters
+    public String getId() {
+        return id;
     }
 
     public String getName() {
@@ -47,17 +70,18 @@ public class DroneServicePoint {
         DroneServicePoint that = (DroneServicePoint) o;
         return Double.compare(that.longitude, longitude) == 0 &&
                 Double.compare(that.latitude, latitude) == 0 &&
+                Objects.equals(id, that.id) &&
                 Objects.equals(name, that.name);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, longitude, latitude);
+        return Objects.hash(id, name, longitude, latitude);
     }
 
     @Override
     public String toString() {
-        return String.format("DroneServicePoint{name='%s', location=(%.6f,%.6f)}",
-                name, longitude, latitude);
+        return String.format("DroneServicePoint{id='%s', name='%s', location=(%.6f,%.6f)}",
+                id, name, longitude, latitude);
     }
 }

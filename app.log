@@ -35,8 +35,8 @@
 
  :: Spring Boot ::                (v3.5.6)
 
-2025-10-19T11:44:28.712+01:00  INFO 2616 --- [ilp] [           main] ilp.submission.SimpledemoApplication     : Starting SimpledemoApplication using Java 21.0.8 with PID 2616 (C:\Users\anjia\Downloads\simpledemo\target\classes started by anjia in C:\Users\anjia\Downloads\simpledemo)
-2025-10-19T11:44:28.721+01:00  INFO 2616 --- [ilp] [           main] ilp.submission.SimpledemoApplication     : No active profile set, falling back to 1 default profile: "default"
+2025-10-19T11:44:28.712+01:00  INFO 2616 --- [ilp] [           main] ilp.submission.ilpApplication     : Starting SimpledemoApplication using Java 21.0.8 with PID 2616 (C:\Users\anjia\Downloads\simpledemo\target\classes started by anjia in C:\Users\anjia\Downloads\simpledemo)
+2025-10-19T11:44:28.721+01:00  INFO 2616 --- [ilp] [           main] ilp.submission.ilpApplication     : No active profile set, falling back to 1 default profile: "default"
 2025-10-19T11:44:29.380+01:00  INFO 2616 --- [ilp] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
 2025-10-19T11:44:29.394+01:00  INFO 2616 --- [ilp] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
 2025-10-19T11:44:29.394+01:00  INFO 2616 --- [ilp] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.46]

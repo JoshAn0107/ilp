@@ -4,27 +4,56 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
+/**
+ * Query attribute with optional operator for drone queries.
+ */
 public class QueryAttribute {
-    @JsonProperty("name")
-    private final String name;
+    @JsonProperty("attribute")
+    private String attribute;
+
+    @JsonProperty("operator")
+    private String operator;
 
     @JsonProperty("value")
-    private final String value;
+    private String value;
 
-    public QueryAttribute(
-            @JsonProperty("name") String name,
-            @JsonProperty("value") String value
-    ) {
-        this.name = Objects.requireNonNull(name, "Name cannot be null");
-        this.value = Objects.requireNonNull(value, "Value cannot be null");
+    public QueryAttribute() {
     }
 
-    public String getName() {
-        return name;
+    public QueryAttribute(String attribute, String value) {
+        this.attribute = attribute;
+        this.operator = "=";
+        this.value = value;
+    }
+
+    public QueryAttribute(String attribute, String operator, String value) {
+        this.attribute = attribute;
+        this.operator = operator;
+        this.value = value;
+    }
+
+    public String getAttribute() {
+        return attribute;
+    }
+
+    public void setAttribute(String attribute) {
+        this.attribute = attribute;
+    }
+
+    public String getOperator() {
+        return operator != null ? operator : "=";
+    }
+
+    public void setOperator(String operator) {
+        this.operator = operator;
     }
 
     public String getValue() {
         return value;
+    }
+
+    public void setValue(String value) {
+        this.value = value;
     }
 
     @Override
@@ -32,17 +61,18 @@ public class QueryAttribute {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         QueryAttribute that = (QueryAttribute) o;
-        return Objects.equals(name, that.name) &&
+        return Objects.equals(attribute, that.attribute) &&
+                Objects.equals(operator, that.operator) &&
                 Objects.equals(value, that.value);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, value);
+        return Objects.hash(attribute, operator, value);
     }
 
     @Override
     public String toString() {
-        return String.format("QueryAttribute{name='%s', value='%s'}", name, value);
+        return String.format("QueryAttribute{%s %s %s}", attribute, getOperator(), value);
     }
 }

@@ -22,7 +22,7 @@ public interface DroneService {
      * @param hasCooling true to get drones with cooling, false without
      * @return List of drone IDs
      */
-    List<Integer> getDronesWithCooling(boolean hasCooling);
+    List<String> getDronesWithCooling(boolean hasCooling);
 
     /**
      * Gets detailed information about a specific drone.
@@ -30,5 +30,5 @@ public interface DroneService {
      * @param id the drone ID
      * @return Optional containing the drone if found, empty otherwise
      */
-    Optional<Drone> getDroneById(int id);
+    Optional<Drone> getDroneById(String id);
 }
