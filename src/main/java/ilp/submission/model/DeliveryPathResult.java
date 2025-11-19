@@ -79,8 +79,17 @@ public class DeliveryPathResult {
         @JsonProperty("droneId")
         private String droneId;
 
+        @JsonProperty("servicePoint")
+        private LngLat servicePoint;
+
         @JsonProperty("deliveries")
         private List<DeliveryInfo> deliveries;
+
+        @JsonProperty("path")
+        private List<LngLat> path;
+
+        @JsonProperty("totalMoves")
+        private int totalMoves;
 
         public DronePathInfo() {
         }
@@ -88,6 +97,16 @@ public class DeliveryPathResult {
         public DronePathInfo(String droneId, List<DeliveryInfo> deliveries) {
             this.droneId = droneId;
             this.deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
+            this.path = List.of();
+            this.totalMoves = 0;
+        }
+
+        public DronePathInfo(String droneId, LngLat servicePoint, List<DeliveryInfo> deliveries, List<LngLat> path, int totalMoves) {
+            this.droneId = droneId;
+            this.servicePoint = servicePoint;
+            this.deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
+            this.path = path != null ? List.copyOf(path) : List.of();
+            this.totalMoves = totalMoves;
         }
 
         public String getDroneId() {
@@ -98,6 +117,14 @@ public class DeliveryPathResult {
             this.droneId = droneId;
         }
 
+        public LngLat getServicePoint() {
+            return servicePoint;
+        }
+
+        public void setServicePoint(LngLat servicePoint) {
+            this.servicePoint = servicePoint;
+        }
+
         public List<DeliveryInfo> getDeliveries() {
             return deliveries;
         }
@@ -106,18 +133,37 @@ public class DeliveryPathResult {
             this.deliveries = deliveries;
         }
 
+        public List<LngLat> getPath() {
+            return path;
+        }
+
+        public void setPath(List<LngLat> path) {
+            this.path = path;
+        }
+
+        public int getTotalMoves() {
+            return totalMoves;
+        }
+
+        public void setTotalMoves(int totalMoves) {
+            this.totalMoves = totalMoves;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             DronePathInfo that = (DronePathInfo) o;
-            return Objects.equals(droneId, that.droneId) &&
-                    Objects.equals(deliveries, that.deliveries);
+            return totalMoves == that.totalMoves &&
+                    Objects.equals(droneId, that.droneId) &&
+                    Objects.equals(servicePoint, that.servicePoint) &&
+                    Objects.equals(deliveries, that.deliveries) &&
+                    Objects.equals(path, that.path);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(droneId, deliveries);
+            return Objects.hash(droneId, servicePoint, deliveries, path, totalMoves);
         }
     }
 

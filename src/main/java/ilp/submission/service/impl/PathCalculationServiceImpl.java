@@ -81,9 +81,13 @@ public class PathCalculationServiceImpl implements PathCalculationService {
 
         // Calculate paths for all deliveries
         List<DeliveryPathResult.DeliveryInfo> deliveries = new ArrayList<>();
+        List<LngLat> combinedPath = new ArrayList<>();
         double totalCost = costInitial;
         int totalMoves = 0;
         LngLat currentLocation = startLocation;
+
+        // Add start location to combined path
+        combinedPath.add(startLocation);
 
         // Use greedy nearest-neighbor for delivery order
         List<MedDispatchRec> orderedDispatches = orderByNearestNeighbor(dispatches, startLocation);
@@ -115,6 +119,15 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 flightPath.add(flightPath.get(flightPath.size() - 1));
             }
 
+            // Add to combined path (skip first point if it duplicates the last point)
+            for (int i = 0; i < flightPath.size(); i++) {
+                if (i == 0 && !combinedPath.isEmpty() &&
+                    combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
+                    continue;
+                }
+                combinedPath.add(flightPath.get(i));
+            }
+
             deliveries.add(new DeliveryPathResult.DeliveryInfo(dispatch.getId(), flightPath));
 
             int moves = Math.max(0, flightPath.size() - 1);
@@ -130,11 +143,20 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             int returnMoves = Math.max(0, returnPath.size() - 1);
             totalMoves += returnMoves;
             totalCost += returnMoves * costPerMove;
+
+            // Add return path to combined path
+            for (int i = 0; i < returnPath.size(); i++) {
+                if (i == 0 && !combinedPath.isEmpty() &&
+                    combinedPath.get(combinedPath.size() - 1).equals(returnPath.get(i))) {
+                    continue;
+                }
+                combinedPath.add(returnPath.get(i));
+            }
         }
         totalCost += costFinal;
 
         List<DeliveryPathResult.DronePathInfo> dronePaths = List.of(
-                new DeliveryPathResult.DronePathInfo(droneId, deliveries)
+                new DeliveryPathResult.DronePathInfo(droneId, startLocation, deliveries, combinedPath, totalMoves)
         );
 
         return new DeliveryPathResult(totalCost, totalMoves, dronePaths);
