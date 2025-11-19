@@ -1,49 +1,66 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DroneServicePoint {
     @JsonProperty("id")
-    private final String id;
+    private final Integer id;
 
     @JsonProperty("name")
     private final String name;
 
-    @JsonProperty("longitude")
-    private final double longitude;
-
-    @JsonProperty("latitude")
-    private final double latitude;
+    @JsonProperty("location")
+    private final Location location;
 
     public DroneServicePoint(
-            @JsonProperty("id") String id,
+            @JsonProperty("id") Integer id,
             @JsonProperty("name") String name,
-            @JsonProperty("longitude") double longitude,
-            @JsonProperty("latitude") double latitude
+            @JsonProperty("location") Location location
     ) {
         this.id = id;
-        this.name = Objects.requireNonNull(name, "Name cannot be null");
-        this.longitude = longitude;
-        this.latitude = latitude;
+        this.name = name != null ? name : "";
+        this.location = location;
     }
 
-    // Record-style accessors
-    public String id() {
-        return id;
+    public DroneServicePoint() {
+        this.id = null;
+        this.name = "";
+        this.location = null;
     }
 
-    public String name() {
-        return name;
+    /**
+     * Location with lng, lat, and optional alt.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Location {
+        @JsonProperty("lng")
+        private double lng;
+
+        @JsonProperty("lat")
+        private double lat;
+
+        @JsonProperty("alt")
+        private Integer alt;
+
+        public Location() {}
+
+        public Location(double lng, double lat, Integer alt) {
+            this.lng = lng;
+            this.lat = lat;
+            this.alt = alt;
+        }
+
+        public double getLng() { return lng; }
+        public double getLat() { return lat; }
+        public Integer getAlt() { return alt; }
     }
 
-    public LngLat location() {
-        return new LngLat(longitude, latitude);
-    }
-
-    // Traditional getters
-    public String getId() {
+    // Getters
+    public Integer getId() {
         return id;
     }
 
@@ -51,16 +68,15 @@ public class DroneServicePoint {
         return name;
     }
 
-    public double getLongitude() {
-        return longitude;
-    }
-
-    public double getLatitude() {
-        return latitude;
+    public Location getLocationObject() {
+        return location;
     }
 
     public LngLat getLocation() {
-        return new LngLat(longitude, latitude);
+        if (location == null) {
+            return null;
+        }
+        return new LngLat(location.getLng(), location.getLat());
     }
 
     @Override
@@ -68,20 +84,22 @@ public class DroneServicePoint {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DroneServicePoint that = (DroneServicePoint) o;
-        return Double.compare(that.longitude, longitude) == 0 &&
-                Double.compare(that.latitude, latitude) == 0 &&
-                Objects.equals(id, that.id) &&
-                Objects.equals(name, that.name);
+        return Objects.equals(id, that.id) &&
+                Objects.equals(name, that.name) &&
+                Objects.equals(location, that.location);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, longitude, latitude);
+        return Objects.hash(id, name, location);
     }
 
     @Override
     public String toString() {
-        return String.format("DroneServicePoint{id='%s', name='%s', location=(%.6f,%.6f)}",
-                id, name, longitude, latitude);
+        if (location != null) {
+            return String.format("DroneServicePoint{id=%d, name='%s', location=(%.6f,%.6f)}",
+                    id, name, location.getLng(), location.getLat());
+        }
+        return String.format("DroneServicePoint{id=%d, name='%s', location=null}", id, name);
     }
 }

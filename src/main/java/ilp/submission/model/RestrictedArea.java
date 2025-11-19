@@ -1,32 +1,76 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 import java.util.Objects;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class RestrictedArea {
     @JsonProperty("name")
     private final String name;
+
+    @JsonProperty("id")
+    private final Integer id;
+
+    @JsonProperty("limits")
+    private final Limits limits;
 
     @JsonProperty("vertices")
     private final List<LngLat> vertices;
 
     public RestrictedArea(
             @JsonProperty("name") String name,
+            @JsonProperty("id") Integer id,
+            @JsonProperty("limits") Limits limits,
             @JsonProperty("vertices") List<LngLat> vertices
     ) {
-        this.name = Objects.requireNonNull(name, "Restricted area name cannot be null");
+        this.name = name != null ? name : "";
+        this.id = id;
+        this.limits = limits;
         this.vertices = vertices != null ? List.copyOf(vertices) : List.of();
     }
 
     public RestrictedArea() {
         this.name = "";
+        this.id = null;
+        this.limits = null;
         this.vertices = List.of();
+    }
+
+    /**
+     * Limits for restricted area altitude.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Limits {
+        @JsonProperty("lower")
+        private int lower;
+
+        @JsonProperty("upper")
+        private int upper;
+
+        public Limits() {}
+
+        public Limits(int lower, int upper) {
+            this.lower = lower;
+            this.upper = upper;
+        }
+
+        public int getLower() { return lower; }
+        public int getUpper() { return upper; }
     }
 
     public String getName() {
         return name;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public Limits getLimits() {
+        return limits;
     }
 
     public List<LngLat> getVertices() {

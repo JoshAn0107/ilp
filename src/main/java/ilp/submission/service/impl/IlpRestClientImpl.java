@@ -54,7 +54,7 @@ public class IlpRestClientImpl implements IlpRestClient {
 
     @Override
     public List<RestrictedArea> fetchRestrictedAreas() {
-        String url = ilpEndpoint + "noFlyZones";
+        String url = ilpEndpoint + "restricted-areas";
         ResponseEntity<List<RestrictedArea>> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
@@ -66,7 +66,7 @@ public class IlpRestClientImpl implements IlpRestClient {
 
     @Override
     public List<DroneServicePoint> fetchServicePoints() {
-        String url = ilpEndpoint + "servicePoints";
+        String url = ilpEndpoint + "service-points";
         ResponseEntity<List<DroneServicePoint>> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
@@ -91,9 +91,12 @@ public class IlpRestClientImpl implements IlpRestClient {
     @Override
     public boolean isAlive() {
         try {
-            String url = ilpEndpoint + "isAlive";
+            String url = ilpEndpoint + "actuator/health/livenessState";
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            return response.getStatusCode().is2xxSuccessful();
+            // Check for 2xx status and "UP" in response
+            return response.getStatusCode().is2xxSuccessful() &&
+                   response.getBody() != null &&
+                   response.getBody().contains("UP");
         } catch (Exception e) {
             return false;
         }
@@ -115,7 +118,7 @@ public class IlpRestClientImpl implements IlpRestClient {
      * @return list of drones for service points
      */
     public List<DroneForServicePoint> fetchDroneAvailability() {
-        String url = ilpEndpoint + "droneAvailability";
+        String url = ilpEndpoint + "drones-for-service-points";
         ResponseEntity<List<DroneForServicePoint>> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,

@@ -1,5 +1,6 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
@@ -7,6 +8,7 @@ import java.util.Objects;
 /**
  * Represents a drone with its identification and capabilities.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Drone {
     @JsonProperty("name")
     private String name;

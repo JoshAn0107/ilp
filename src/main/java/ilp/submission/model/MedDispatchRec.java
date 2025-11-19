@@ -1,6 +1,7 @@
 package ilp.submission.model;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
@@ -8,6 +9,7 @@ import java.util.Objects;
 /**
  * Medical dispatch record for delivery requests.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class MedDispatchRec {
     @JsonProperty("id")
     private int id;

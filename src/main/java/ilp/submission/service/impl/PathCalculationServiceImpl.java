@@ -187,37 +187,135 @@ public class PathCalculationServiceImpl implements PathCalculationService {
     }
 
     /**
-     * Assigns dispatches to drones, ensuring no time conflicts.
-     * Dispatches at the same date+time must go to different drones.
+     * Assigns dispatches to drones, considering:
+     * - Time conflicts (same time = different drones)
+     * - Drone capabilities (cooling, heating, capacity)
+     * - Max moves constraint
+     * - Minimizing drone usage
      */
     private List<List<MedDispatchRec>> assignDispatchesToDrones(List<MedDispatchRec> dispatches, List<Drone> drones) {
-        // Map to track which time slots each drone has occupied
+        // Track state for each drone
         Map<Integer, Set<String>> droneTimeSlots = new HashMap<>();
+        Map<Integer, Double> droneCapacityUsed = new HashMap<>();
+        Map<Integer, Integer> droneEstimatedMoves = new HashMap<>();
         List<List<MedDispatchRec>> assignments = new ArrayList<>();
 
-        // Determine max drones available (at least as many as needed for conflicts)
+        // Get default start location for move estimation
+        LngLat defaultStart = new LngLat(-3.186874, 55.944494);
+
+        // Determine available drones
         int maxDrones = drones != null && !drones.isEmpty() ? drones.size() : dispatches.size();
 
         for (MedDispatchRec dispatch : dispatches) {
             String timeSlot = getTimeSlot(dispatch);
+            MedDispatchRec.Requirements req = dispatch.getRequirements();
+
+            // Get dispatch requirements
+            double requiredCapacity = req != null ? req.getCapacity() : 0;
+            boolean requiresCooling = req != null && req.requiresCooling();
+            boolean requiresHeating = req != null && req.requiresHeating();
+
+            // Estimate moves for this dispatch (round trip from start to delivery)
+            LngLat deliveryLoc = dispatch.getDeliveryLocation();
+            int estimatedMoves = 0;
+            if (deliveryLoc != null) {
+                double dist = distance(defaultStart, deliveryLoc);
+                estimatedMoves = (int) Math.ceil(dist / MOVE_DISTANCE) * 2; // Round trip
+            }
+
             int assignedDrone = -1;
 
-            // Find a drone that doesn't have a conflict at this time
+            // Find a suitable drone
             for (int i = 0; i < maxDrones; i++) {
+                // Check time conflict
                 Set<String> occupiedSlots = droneTimeSlots.computeIfAbsent(i, k -> new HashSet<>());
-                if (!occupiedSlots.contains(timeSlot)) {
-                    assignedDrone = i;
-                    occupiedSlots.add(timeSlot);
-                    break;
+                if (occupiedSlots.contains(timeSlot)) {
+                    continue; // Time conflict
+                }
+
+                // Check drone capabilities
+                if (drones != null && i < drones.size()) {
+                    Drone drone = drones.get(i);
+                    DroneCapability cap = drone.getCapability();
+
+                    if (cap != null) {
+                        // Check cooling requirement
+                        if (requiresCooling && !cap.isCooling()) {
+                            continue; // Drone doesn't have cooling
+                        }
+
+                        // Check heating requirement
+                        if (requiresHeating && !cap.isHeating()) {
+                            continue; // Drone doesn't have heating
+                        }
+
+                        // Check capacity
+                        double usedCapacity = droneCapacityUsed.getOrDefault(i, 0.0);
+                        if (usedCapacity + requiredCapacity > cap.getCapacity()) {
+                            continue; // Not enough capacity
+                        }
+
+                        // Check max moves constraint
+                        int currentMoves = droneEstimatedMoves.getOrDefault(i, 0);
+                        if (cap.getMaxMoves() > 0 && currentMoves + estimatedMoves > cap.getMaxMoves()) {
+                            continue; // Would exceed max moves
+                        }
+                    }
+                }
+
+                // This drone is suitable
+                assignedDrone = i;
+                occupiedSlots.add(timeSlot);
+
+                // Update capacity and moves used
+                double currentUsed = droneCapacityUsed.getOrDefault(i, 0.0);
+                droneCapacityUsed.put(i, currentUsed + requiredCapacity);
+                int currentMoves = droneEstimatedMoves.getOrDefault(i, 0);
+                droneEstimatedMoves.put(i, currentMoves + estimatedMoves);
+                break;
+            }
+
+            // If no suitable drone found, try to create/use a new one
+            if (assignedDrone == -1) {
+                // Find or create a drone that can handle this dispatch
+                for (int i = 0; i < dispatches.size(); i++) {
+                    Set<String> occupiedSlots = droneTimeSlots.computeIfAbsent(i, k -> new HashSet<>());
+                    if (!occupiedSlots.contains(timeSlot)) {
+                        // Check if this virtual drone can be matched to any available drone
+                        boolean canHandle = true;
+                        if (drones != null && !drones.isEmpty()) {
+                            canHandle = false;
+                            for (Drone drone : drones) {
+                                DroneCapability cap = drone.getCapability();
+                                if (cap != null) {
+                                    boolean hasCooling = !requiresCooling || cap.isCooling();
+                                    boolean hasHeating = !requiresHeating || cap.isHeating();
+                                    boolean hasCapacity = requiredCapacity <= cap.getCapacity();
+                                    if (hasCooling && hasHeating && hasCapacity) {
+                                        canHandle = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (canHandle) {
+                            assignedDrone = i;
+                            occupiedSlots.add(timeSlot);
+                            droneCapacityUsed.put(i, requiredCapacity);
+                            break;
+                        }
+                    }
                 }
             }
 
-            // If no existing drone available, create a new one
+            // Fallback: assign to a new drone index
             if (assignedDrone == -1) {
                 assignedDrone = droneTimeSlots.size();
                 Set<String> newSlots = new HashSet<>();
                 newSlots.add(timeSlot);
                 droneTimeSlots.put(assignedDrone, newSlots);
+                droneCapacityUsed.put(assignedDrone, requiredCapacity);
             }
 
             // Ensure we have enough lists
