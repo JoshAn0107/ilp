@@ -1,5 +1,6 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
@@ -24,6 +25,7 @@ public class MedDispatchRec {
     private LngLat pickupLocation;
 
     @JsonProperty("deliveryLocation")
+    @JsonAlias("delivery")
     private LngLat deliveryLocation;
 
     @JsonProperty("requirements")

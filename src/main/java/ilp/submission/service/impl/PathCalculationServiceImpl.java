@@ -53,7 +53,6 @@ public class PathCalculationServiceImpl implements PathCalculationService {
 
         // Default values
         LngLat startLocation = new LngLat(-3.186874, 55.944494);
-        String droneId = "1";
         double costPerMove = 0.001;
         double costInitial = 0.1;
         double costFinal = 0.1;
@@ -66,12 +65,9 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             }
         }
 
-        // Use actual drone if available
+        // Get drone costs from first available drone
         if (drones != null && !drones.isEmpty()) {
             Drone drone = drones.get(0);
-            if (drone.getId() != null) {
-                droneId = drone.getId();
-            }
             if (drone.getCapability() != null) {
                 costPerMove = drone.getCapability().getCostPerMove();
                 costInitial = drone.getCapability().getCostInitial();
@@ -79,118 +75,203 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             }
         }
 
-        // Calculate paths for all deliveries
-        List<DeliveryPathResult.DeliveryInfo> deliveries = new ArrayList<>();
-        List<LngLat> combinedPath = new ArrayList<>();
-        double totalCost = costInitial;
+        // Group dispatches by drone to handle time conflicts
+        List<List<MedDispatchRec>> droneAssignments = assignDispatchesToDrones(dispatches, drones);
+
+        // Calculate paths for each drone
+        List<DeliveryPathResult.DronePathInfo> dronePaths = new ArrayList<>();
+        double totalCost = 0;
         int totalMoves = 0;
-        LngLat currentLocation = startLocation;
 
-        // Add start location to combined path
-        combinedPath.add(startLocation);
-
-        // Use greedy nearest-neighbor for delivery order
-        List<MedDispatchRec> orderedDispatches = orderByNearestNeighbor(dispatches, startLocation);
-
-        for (MedDispatchRec dispatch : orderedDispatches) {
-            LngLat pickupLocation = dispatch.getPickupLocation();
-            LngLat deliveryLocation = dispatch.getDeliveryLocation();
-
-            // Use default locations if missing
-            if (pickupLocation == null) {
-                pickupLocation = startLocation;
-            }
-            if (deliveryLocation == null) {
-                deliveryLocation = startLocation;
+        for (int droneIndex = 0; droneIndex < droneAssignments.size(); droneIndex++) {
+            List<MedDispatchRec> droneDispatches = droneAssignments.get(droneIndex);
+            if (droneDispatches.isEmpty()) {
+                continue;
             }
 
-            // Path to pickup
-            List<LngLat> toPickup = findPath(currentLocation, pickupLocation, noFlyZones);
-            // Path from pickup to delivery
-            List<LngLat> toDelivery = findPath(pickupLocation, deliveryLocation, noFlyZones);
-
-            // Combine paths with hover at delivery
-            List<LngLat> flightPath = new ArrayList<>();
-            flightPath.addAll(toPickup);
-            flightPath.addAll(toDelivery);
-
-            // Add hover (duplicate location to indicate delivery)
-            if (!flightPath.isEmpty()) {
-                flightPath.add(flightPath.get(flightPath.size() - 1));
+            // Get drone ID
+            String droneId;
+            if (drones != null && droneIndex < drones.size() && drones.get(droneIndex).getId() != null) {
+                droneId = drones.get(droneIndex).getId();
+            } else {
+                droneId = String.valueOf(droneIndex + 1);
             }
 
-            // Add to combined path (skip first point if it duplicates the last point)
-            for (int i = 0; i < flightPath.size(); i++) {
-                if (i == 0 && !combinedPath.isEmpty() &&
-                    combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
-                    continue;
+            // Calculate path for this drone
+            List<DeliveryPathResult.DeliveryInfo> deliveries = new ArrayList<>();
+            List<LngLat> combinedPath = new ArrayList<>();
+            int droneMoves = 0;
+            LngLat currentLocation = startLocation;
+
+            // Add start location to combined path
+            combinedPath.add(startLocation);
+
+            // Use greedy nearest-neighbor for delivery order
+            List<MedDispatchRec> orderedDispatches = orderByNearestNeighbor(droneDispatches, startLocation);
+
+            for (MedDispatchRec dispatch : orderedDispatches) {
+                LngLat pickupLocation = dispatch.getPickupLocation();
+                LngLat deliveryLocation = dispatch.getDeliveryLocation();
+
+                // Debug logging
+                System.out.println("Processing dispatch " + dispatch.getId() +
+                    ": pickup=" + pickupLocation + ", delivery=" + deliveryLocation);
+
+                // Use default locations if missing
+                if (pickupLocation == null) {
+                    System.out.println("WARNING: Dispatch " + dispatch.getId() + " has no pickup location, using service point");
+                    pickupLocation = startLocation;
                 }
-                combinedPath.add(flightPath.get(i));
-            }
-
-            deliveries.add(new DeliveryPathResult.DeliveryInfo(dispatch.getId(), flightPath));
-
-            int moves = Math.max(0, flightPath.size() - 1);
-            totalMoves += moves;
-            totalCost += moves * costPerMove;
-
-            currentLocation = deliveryLocation;
-        }
-
-        // Return to service point
-        if (currentLocation != null && !currentLocation.equals(startLocation)) {
-            List<LngLat> returnPath = findPath(currentLocation, startLocation, noFlyZones);
-            int returnMoves = Math.max(0, returnPath.size() - 1);
-            totalMoves += returnMoves;
-            totalCost += returnMoves * costPerMove;
-
-            // Add return path to combined path
-            for (int i = 0; i < returnPath.size(); i++) {
-                if (i == 0 && !combinedPath.isEmpty() &&
-                    combinedPath.get(combinedPath.size() - 1).equals(returnPath.get(i))) {
-                    continue;
+                if (deliveryLocation == null) {
+                    System.out.println("WARNING: Dispatch " + dispatch.getId() + " has no delivery location, using service point");
+                    deliveryLocation = startLocation;
                 }
-                combinedPath.add(returnPath.get(i));
-            }
-        }
-        totalCost += costFinal;
 
-        List<DeliveryPathResult.DronePathInfo> dronePaths = List.of(
-                new DeliveryPathResult.DronePathInfo(droneId, startLocation, deliveries, combinedPath, totalMoves)
-        );
+                // Path to pickup
+                List<LngLat> toPickup = findPath(currentLocation, pickupLocation, noFlyZones);
+                // Path from pickup to delivery
+                List<LngLat> toDelivery = findPath(pickupLocation, deliveryLocation, noFlyZones);
+
+                // Combine paths with hover at delivery
+                List<LngLat> flightPath = new ArrayList<>();
+                flightPath.addAll(toPickup);
+                flightPath.addAll(toDelivery);
+
+                // Add hover (duplicate location to indicate delivery)
+                if (!flightPath.isEmpty()) {
+                    flightPath.add(flightPath.get(flightPath.size() - 1));
+                }
+
+                // Add to combined path (skip first point if it duplicates the last point)
+                for (int i = 0; i < flightPath.size(); i++) {
+                    if (i == 0 && !combinedPath.isEmpty() &&
+                        combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
+                        continue;
+                    }
+                    combinedPath.add(flightPath.get(i));
+                }
+
+                deliveries.add(new DeliveryPathResult.DeliveryInfo(dispatch.getId(), flightPath));
+
+                int moves = Math.max(0, flightPath.size() - 1);
+                droneMoves += moves;
+
+                currentLocation = deliveryLocation;
+            }
+
+            // Return to service point
+            if (currentLocation != null && !currentLocation.equals(startLocation)) {
+                List<LngLat> returnPath = findPath(currentLocation, startLocation, noFlyZones);
+                int returnMoves = Math.max(0, returnPath.size() - 1);
+                droneMoves += returnMoves;
+
+                // Add return path to combined path
+                for (int i = 0; i < returnPath.size(); i++) {
+                    if (i == 0 && !combinedPath.isEmpty() &&
+                        combinedPath.get(combinedPath.size() - 1).equals(returnPath.get(i))) {
+                        continue;
+                    }
+                    combinedPath.add(returnPath.get(i));
+                }
+            }
+
+            // Calculate drone cost
+            double droneCost = costInitial + (droneMoves * costPerMove) + costFinal;
+            totalCost += droneCost;
+            totalMoves += droneMoves;
+
+            dronePaths.add(new DeliveryPathResult.DronePathInfo(droneId, startLocation, deliveries, combinedPath, droneMoves));
+        }
 
         return new DeliveryPathResult(totalCost, totalMoves, dronePaths);
+    }
+
+    /**
+     * Assigns dispatches to drones, ensuring no time conflicts.
+     * Dispatches at the same date+time must go to different drones.
+     */
+    private List<List<MedDispatchRec>> assignDispatchesToDrones(List<MedDispatchRec> dispatches, List<Drone> drones) {
+        // Map to track which time slots each drone has occupied
+        Map<Integer, Set<String>> droneTimeSlots = new HashMap<>();
+        List<List<MedDispatchRec>> assignments = new ArrayList<>();
+
+        // Determine max drones available (at least as many as needed for conflicts)
+        int maxDrones = drones != null && !drones.isEmpty() ? drones.size() : dispatches.size();
+
+        for (MedDispatchRec dispatch : dispatches) {
+            String timeSlot = getTimeSlot(dispatch);
+            int assignedDrone = -1;
+
+            // Find a drone that doesn't have a conflict at this time
+            for (int i = 0; i < maxDrones; i++) {
+                Set<String> occupiedSlots = droneTimeSlots.computeIfAbsent(i, k -> new HashSet<>());
+                if (!occupiedSlots.contains(timeSlot)) {
+                    assignedDrone = i;
+                    occupiedSlots.add(timeSlot);
+                    break;
+                }
+            }
+
+            // If no existing drone available, create a new one
+            if (assignedDrone == -1) {
+                assignedDrone = droneTimeSlots.size();
+                Set<String> newSlots = new HashSet<>();
+                newSlots.add(timeSlot);
+                droneTimeSlots.put(assignedDrone, newSlots);
+            }
+
+            // Ensure we have enough lists
+            while (assignments.size() <= assignedDrone) {
+                assignments.add(new ArrayList<>());
+            }
+
+            assignments.get(assignedDrone).add(dispatch);
+        }
+
+        return assignments;
+    }
+
+    /**
+     * Gets the time slot key for a dispatch (date + time).
+     */
+    private String getTimeSlot(MedDispatchRec dispatch) {
+        String date = dispatch.getDate() != null ? dispatch.getDate() : "";
+        String time = dispatch.getTime() != null ? dispatch.getTime() : "";
+        return date + "T" + time;
     }
 
     @Override
     public String generateGeoJson(List<MedDispatchRec> dispatches) {
         DeliveryPathResult result = calculateDeliveryPaths(dispatches);
 
-        List<double[]> coordinates = new ArrayList<>();
-
-        for (DeliveryPathResult.DronePathInfo dronePath : result.getDronePaths()) {
-            for (DeliveryPathResult.DeliveryInfo delivery : dronePath.getDeliveries()) {
-                for (LngLat point : delivery.getFlightPath()) {
-                    coordinates.add(new double[]{point.lng(), point.lat()});
-                }
-            }
-        }
-
         StringBuilder json = new StringBuilder();
         json.append("{\"type\":\"FeatureCollection\",\"features\":[");
 
-        if (!coordinates.isEmpty()) {
+        boolean firstFeature = true;
+        for (DeliveryPathResult.DronePathInfo dronePath : result.getDronePaths()) {
+            List<LngLat> path = dronePath.getPath();
+            if (path == null || path.isEmpty()) {
+                continue;
+            }
+
+            if (!firstFeature) {
+                json.append(",");
+            }
+            firstFeature = false;
+
             json.append("{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[");
 
-            for (int i = 0; i < coordinates.size(); i++) {
-                double[] coord = coordinates.get(i);
-                json.append(String.format("[%.6f,%.6f]", coord[0], coord[1]));
-                if (i < coordinates.size() - 1) {
+            for (int i = 0; i < path.size(); i++) {
+                LngLat point = path.get(i);
+                json.append(String.format("[%.6f,%.6f]", point.lng(), point.lat()));
+                if (i < path.size() - 1) {
                     json.append(",");
                 }
             }
 
-            json.append("]},\"properties\":{}}");
+            json.append("]},\"properties\":{\"droneId\":\"");
+            json.append(dronePath.getDroneId() != null ? dronePath.getDroneId() : "1");
+            json.append("\"}}");
         }
 
         json.append("]}");
@@ -251,9 +332,9 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             return List.of();
         }
 
-        // If already close to target, return direct path
+        // If already close to target, return single point (no movement needed)
         if (isCloseTo(start, end)) {
-            return List.of(start, end);
+            return List.of(start);
         }
 
         PriorityQueue<Node> openSet = new PriorityQueue<>(Comparator.comparingDouble(n -> n.fScore));
@@ -306,8 +387,51 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             }
         }
 
-        // No path found, return direct path (may cross no-fly zones)
-        return List.of(start, end);
+        // No path found, generate direct path with actual moves
+        return generateDirectPath(start, end);
+    }
+
+    /**
+     * Generates a direct path from start to end using compass directions.
+     * Used as fallback when A* cannot find a path around no-fly zones.
+     */
+    private List<LngLat> generateDirectPath(LngLat start, LngLat end) {
+        List<LngLat> path = new ArrayList<>();
+        path.add(start);
+
+        LngLat current = start;
+        int maxMoves = 1000; // Safety limit
+        int moves = 0;
+
+        while (!isCloseTo(current, end) && moves < maxMoves) {
+            // Calculate angle to target
+            double dx = end.lng() - current.lng();
+            double dy = end.lat() - current.lat();
+            double angleToTarget = Math.toDegrees(Math.atan2(dy, dx));
+            if (angleToTarget < 0) {
+                angleToTarget += 360;
+            }
+
+            // Find nearest compass direction
+            double bestAngle = 0;
+            double minDiff = Double.MAX_VALUE;
+            for (double angle : DIRECTIONS) {
+                double diff = Math.abs(angle - angleToTarget);
+                if (diff > 180) {
+                    diff = 360 - diff;
+                }
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestAngle = angle;
+                }
+            }
+
+            current = nextPosition(current, bestAngle);
+            path.add(current);
+            moves++;
+        }
+
+        return path;
     }
 
     private List<LngLat> reconstructPath(Node endNode, LngLat target) {
