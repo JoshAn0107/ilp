@@ -26,11 +26,7 @@ public class DroneServicePoint {
         this.location = location;
     }
 
-    public DroneServicePoint() {
-        this.id = null;
-        this.name = "";
-        this.location = null;
-    }
+
 
     /**
      * Location with lng, lat, and optional alt.

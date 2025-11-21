@@ -16,9 +16,6 @@ public class ErrorResponse {
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS")
     private LocalDateTime timestamp;
 
-    public ErrorResponse() {
-    }
-
     public ErrorResponse(String message, int status) {
         this.message = message;
         this.status = status;

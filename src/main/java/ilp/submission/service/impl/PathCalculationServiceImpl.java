@@ -40,28 +40,43 @@ public class PathCalculationServiceImpl implements PathCalculationService {
         List<RestrictedArea> noFlyZones;
         List<DroneServicePoint> servicePoints;
         List<Drone> drones;
+        List<DroneForServicePoint> droneAvailability;
 
         try {
             noFlyZones = ilpRestClient.fetchRestrictedAreas();
             servicePoints = ilpRestClient.fetchServicePoints();
             drones = ilpRestClient.fetchDrones();
+            droneAvailability = ((IlpRestClientImpl) ilpRestClient).fetchDroneAvailability();
+
+            System.out.println("Fetched " + servicePoints.size() + " service points");
+            System.out.println("Fetched " + drones.size() + " drones");
+            System.out.println("Fetched drone availability for " + droneAvailability.size() + " service points");
+
+            for (DroneServicePoint sp : servicePoints) {
+                System.out.println("  Service Point: " + sp);
+            }
         } catch (Exception e) {
+            System.err.println("Error fetching API data: " + e.getMessage());
+            e.printStackTrace();
             noFlyZones = List.of();
             servicePoints = List.of();
             drones = List.of();
+            droneAvailability = List.of();
         }
 
         // Default values
-        LngLat startLocation = new LngLat(-3.186874, 55.944494);
+        LngLat defaultLocation = new LngLat(-3.186874, 55.944494);
         double costPerMove = 0.001;
         double costInitial = 0.1;
         double costFinal = 0.1;
 
-        // Use actual service point if available
-        if (servicePoints != null && !servicePoints.isEmpty()) {
-            LngLat loc = servicePoints.get(0).getLocation();
-            if (loc != null) {
-                startLocation = loc;
+        // Build service point lookup map
+        Map<Integer, DroneServicePoint> servicePointMap = new HashMap<>();
+        if (servicePoints != null) {
+            for (DroneServicePoint sp : servicePoints) {
+                if (sp.getId() != null) {
+                    servicePointMap.put(sp.getId(), sp);
+                }
             }
         }
 
@@ -75,112 +90,145 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             }
         }
 
-        // Group dispatches by drone to handle time conflicts
-        List<List<MedDispatchRec>> droneAssignments = assignDispatchesToDrones(dispatches, drones);
+        // Group dispatches by service point (assign each dispatch to nearest service point)
+        Map<Integer, List<MedDispatchRec>> dispatchesByServicePoint = groupDispatchesByServicePoint(
+                dispatches, servicePoints, servicePointMap, defaultLocation);
 
-        // Calculate paths for each drone
+        // Calculate paths for each service point
         List<DeliveryPathResult.DronePathInfo> dronePaths = new ArrayList<>();
         double totalCost = 0;
         int totalMoves = 0;
 
-        for (int droneIndex = 0; droneIndex < droneAssignments.size(); droneIndex++) {
-            List<MedDispatchRec> droneDispatches = droneAssignments.get(droneIndex);
-            if (droneDispatches.isEmpty()) {
-                continue;
+        for (Map.Entry<Integer, List<MedDispatchRec>> entry : dispatchesByServicePoint.entrySet()) {
+            Integer servicePointId = entry.getKey();
+            List<MedDispatchRec> servicePointDispatches = entry.getValue();
+
+            // Get service point location
+            LngLat servicePointLocation = defaultLocation;
+            if (servicePointMap.containsKey(servicePointId)) {
+                LngLat loc = servicePointMap.get(servicePointId).getLocation();
+                if (loc != null) {
+                    servicePointLocation = loc;
+                }
             }
 
-            // Get drone ID
-            String droneId;
-            if (drones != null && droneIndex < drones.size() && drones.get(droneIndex).getId() != null) {
-                droneId = drones.get(droneIndex).getId();
-            } else {
-                droneId = String.valueOf(droneIndex + 1);
-            }
+            System.out.println("Processing " + servicePointDispatches.size() +
+                    " dispatches for service point " + servicePointId +
+                    " at " + servicePointLocation);
 
-            // Calculate path for this drone
-            List<DeliveryPathResult.DeliveryInfo> deliveries = new ArrayList<>();
-            List<LngLat> combinedPath = new ArrayList<>();
-            int droneMoves = 0;
-            LngLat currentLocation = startLocation;
+            // Get available drones at this service point
+            List<Drone> servicePointDrones = getDronesAtServicePoint(
+                    servicePointId, droneAvailability, drones);
 
-            // Add start location to combined path
-            combinedPath.add(startLocation);
+            System.out.println("  Available drones: " + servicePointDrones.size());
 
-            // Use greedy nearest-neighbor for delivery order
-            List<MedDispatchRec> orderedDispatches = orderByNearestNeighbor(droneDispatches, startLocation);
+            // Assign dispatches to drones at this service point
+            List<List<MedDispatchRec>> droneAssignments = assignDispatchesToDrones(
+                    servicePointDispatches, servicePointDrones);
 
-            for (MedDispatchRec dispatch : orderedDispatches) {
-                LngLat pickupLocation = dispatch.getPickupLocation();
-                LngLat deliveryLocation = dispatch.getDeliveryLocation();
-
-                // Debug logging
-                System.out.println("Processing dispatch " + dispatch.getId() +
-                    ": pickup=" + pickupLocation + ", delivery=" + deliveryLocation);
-
-                // Use default locations if missing
-                if (pickupLocation == null) {
-                    System.out.println("WARNING: Dispatch " + dispatch.getId() + " has no pickup location, using service point");
-                    pickupLocation = startLocation;
-                }
-                if (deliveryLocation == null) {
-                    System.out.println("WARNING: Dispatch " + dispatch.getId() + " has no delivery location, using service point");
-                    deliveryLocation = startLocation;
+            // Calculate paths for each drone at this service point
+            for (int droneIndex = 0; droneIndex < droneAssignments.size(); droneIndex++) {
+                List<MedDispatchRec> droneDispatches = droneAssignments.get(droneIndex);
+                if (droneDispatches.isEmpty()) {
+                    continue;
                 }
 
-                // Path to pickup
-                List<LngLat> toPickup = findPath(currentLocation, pickupLocation, noFlyZones);
-                // Path from pickup to delivery
-                List<LngLat> toDelivery = findPath(pickupLocation, deliveryLocation, noFlyZones);
-
-                // Combine paths with hover at delivery
-                List<LngLat> flightPath = new ArrayList<>();
-                flightPath.addAll(toPickup);
-                flightPath.addAll(toDelivery);
-
-                // Add hover (duplicate location to indicate delivery)
-                if (!flightPath.isEmpty()) {
-                    flightPath.add(flightPath.get(flightPath.size() - 1));
+                // Get drone ID
+                String droneId;
+                if (servicePointDrones != null && droneIndex < servicePointDrones.size() &&
+                    servicePointDrones.get(droneIndex).getId() != null) {
+                    droneId = servicePointDrones.get(droneIndex).getId();
+                } else {
+                    droneId = "SP" + servicePointId + "-D" + (droneIndex + 1);
                 }
 
-                // Add to combined path (skip first point if it duplicates the last point)
-                for (int i = 0; i < flightPath.size(); i++) {
-                    if (i == 0 && !combinedPath.isEmpty() &&
-                        combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
-                        continue;
+                // Calculate path for this drone
+                List<DeliveryPathResult.DeliveryInfo> deliveries = new ArrayList<>();
+                List<LngLat> combinedPath = new ArrayList<>();
+                int droneMoves = 0;
+                LngLat currentLocation = servicePointLocation;
+
+                // Add start location to combined path
+                combinedPath.add(servicePointLocation);
+
+                // Use greedy nearest-neighbor for delivery order
+                List<MedDispatchRec> orderedDispatches = orderByNearestNeighbor(droneDispatches, servicePointLocation);
+
+                for (int deliveryIndex = 0; deliveryIndex < orderedDispatches.size(); deliveryIndex++) {
+                    MedDispatchRec dispatch = orderedDispatches.get(deliveryIndex);
+                    boolean isLastDelivery = (deliveryIndex == orderedDispatches.size() - 1);
+
+                    LngLat pickupLocation = dispatch.getPickupLocation();
+                    LngLat deliveryLocation = dispatch.getDeliveryLocation();
+
+                    // Debug logging
+                    System.out.println("  Processing dispatch " + dispatch.getId() +
+                        ": pickup=" + pickupLocation + ", delivery=" + deliveryLocation);
+
+                    // Use default locations if missing
+                    if (pickupLocation == null) {
+                        System.out.println("  WARNING: Dispatch " + dispatch.getId() + " has no pickup location, using service point");
+                        pickupLocation = servicePointLocation;
                     }
-                    combinedPath.add(flightPath.get(i));
-                }
-
-                deliveries.add(new DeliveryPathResult.DeliveryInfo(dispatch.getId(), flightPath));
-
-                int moves = Math.max(0, flightPath.size() - 1);
-                droneMoves += moves;
-
-                currentLocation = deliveryLocation;
-            }
-
-            // Return to service point
-            if (currentLocation != null && !currentLocation.equals(startLocation)) {
-                List<LngLat> returnPath = findPath(currentLocation, startLocation, noFlyZones);
-                int returnMoves = Math.max(0, returnPath.size() - 1);
-                droneMoves += returnMoves;
-
-                // Add return path to combined path
-                for (int i = 0; i < returnPath.size(); i++) {
-                    if (i == 0 && !combinedPath.isEmpty() &&
-                        combinedPath.get(combinedPath.size() - 1).equals(returnPath.get(i))) {
-                        continue;
+                    if (deliveryLocation == null) {
+                        System.out.println("  WARNING: Dispatch " + dispatch.getId() + " has no delivery location, using service point");
+                        deliveryLocation = servicePointLocation;
                     }
-                    combinedPath.add(returnPath.get(i));
+
+                    // Path to pickup
+                    List<LngLat> toPickup = findPath(currentLocation, pickupLocation, noFlyZones);
+                    // Path from pickup to delivery
+                    List<LngLat> toDelivery = findPath(pickupLocation, deliveryLocation, noFlyZones);
+
+                    // Combine paths avoiding duplicate at pickup location
+                    List<LngLat> flightPath = new ArrayList<>();
+                    flightPath.addAll(toPickup);
+
+                    // Skip first point of toDelivery to avoid duplicate at pickup
+                    // (toPickup ends at pickupLocation, toDelivery starts at pickupLocation)
+                    for (int i = 1; i < toDelivery.size(); i++) {
+                        flightPath.add(toDelivery.get(i));
+                    }
+
+                    // Add hover (duplicate location to indicate delivery)
+                    if (!flightPath.isEmpty()) {
+                        flightPath.add(flightPath.get(flightPath.size() - 1));
+                    }
+
+                    // If this is the last delivery, add return path to service point
+                    if (isLastDelivery && !deliveryLocation.equals(servicePointLocation)) {
+                        List<LngLat> returnPath = findPath(deliveryLocation, servicePointLocation, noFlyZones);
+                        // Skip first point of return path to avoid duplicate at delivery location
+                        // (flightPath ends at deliveryLocation, returnPath starts at deliveryLocation)
+                        for (int i = 1; i < returnPath.size(); i++) {
+                            flightPath.add(returnPath.get(i));
+                        }
+                    }
+
+                    // Add to combined path (skip first point if it duplicates the last point)
+                    for (int i = 0; i < flightPath.size(); i++) {
+                        if (i == 0 && !combinedPath.isEmpty() &&
+                            combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
+                            continue;
+                        }
+                        combinedPath.add(flightPath.get(i));
+                    }
+
+                    deliveries.add(new DeliveryPathResult.DeliveryInfo(dispatch.getId(), flightPath));
+
+                    int moves = Math.max(0, flightPath.size() - 1);
+                    droneMoves += moves;
+
+                    currentLocation = deliveryLocation;
                 }
+
+                // Calculate drone cost
+                double droneCost = costInitial + (droneMoves * costPerMove) + costFinal;
+                totalCost += droneCost;
+                totalMoves += droneMoves;
+
+                dronePaths.add(new DeliveryPathResult.DronePathInfo(droneId, servicePointLocation, deliveries, combinedPath, droneMoves));
             }
-
-            // Calculate drone cost
-            double droneCost = costInitial + (droneMoves * costPerMove) + costFinal;
-            totalCost += droneCost;
-            totalMoves += droneMoves;
-
-            dronePaths.add(new DeliveryPathResult.DronePathInfo(droneId, startLocation, deliveries, combinedPath, droneMoves));
         }
 
         return new DeliveryPathResult(totalCost, totalMoves, dronePaths);
@@ -661,6 +709,102 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 p.lng() <= Math.max(p1.lng(), p2.lng()) &&
                 Math.min(p1.lat(), p2.lat()) <= p.lat() &&
                 p.lat() <= Math.max(p1.lat(), p2.lat());
+    }
+
+    /**
+     * Groups dispatches by their nearest service point.
+     * Each dispatch is assigned to the service point that is closest to its delivery location.
+     */
+    private Map<Integer, List<MedDispatchRec>> groupDispatchesByServicePoint(
+            List<MedDispatchRec> dispatches,
+            List<DroneServicePoint> servicePoints,
+            Map<Integer, DroneServicePoint> servicePointMap,
+            LngLat defaultLocation) {
+
+        Map<Integer, List<MedDispatchRec>> result = new HashMap<>();
+
+        // If no service points, use a default service point ID of 0
+        if (servicePoints == null || servicePoints.isEmpty()) {
+            result.put(0, new ArrayList<>(dispatches));
+            return result;
+        }
+
+        // Assign each dispatch to nearest service point
+        for (MedDispatchRec dispatch : dispatches) {
+            LngLat deliveryLoc = dispatch.getDeliveryLocation();
+            if (deliveryLoc == null) {
+                deliveryLoc = defaultLocation;
+            }
+
+            // Find nearest service point
+            DroneServicePoint nearestSP = null;
+            double minDistance = Double.MAX_VALUE;
+
+            for (DroneServicePoint sp : servicePoints) {
+                LngLat spLoc = sp.getLocation();
+                if (spLoc != null) {
+                    double dist = distance(spLoc, deliveryLoc);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        nearestSP = sp;
+                    }
+                }
+            }
+
+            // Add dispatch to the nearest service point's list
+            Integer spId = nearestSP != null && nearestSP.getId() != null ? nearestSP.getId() : 0;
+            result.computeIfAbsent(spId, k -> new ArrayList<>()).add(dispatch);
+        }
+
+        return result;
+    }
+
+    /**
+     * Gets the list of drones available at a specific service point.
+     * Merges drone IDs from availability data with drone details from the drones list.
+     */
+    private List<Drone> getDronesAtServicePoint(
+            Integer servicePointId,
+            List<DroneForServicePoint> droneAvailability,
+            List<Drone> allDrones) {
+
+        // Find drone IDs at this service point
+        Set<String> droneIdsAtServicePoint = new HashSet<>();
+
+        if (droneAvailability != null) {
+            for (DroneForServicePoint dfsp : droneAvailability) {
+                if (dfsp.getServicePointId() != null &&
+                    dfsp.getServicePointId().equals(servicePointId)) {
+                    List<DroneForServicePoint.DroneAvailability> drones = dfsp.getDrones();
+                    if (drones != null) {
+                        for (DroneForServicePoint.DroneAvailability da : drones) {
+                            if (da.getId() != null) {
+                                droneIdsAtServicePoint.add(da.getId());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no specific drones found, return all drones (fallback)
+        if (droneIdsAtServicePoint.isEmpty()) {
+            System.out.println("  WARNING: No specific drones found for service point " +
+                    servicePointId + ", using all available drones");
+            return allDrones != null ? allDrones : List.of();
+        }
+
+        // Filter drones list to only include drones at this service point
+        List<Drone> result = new ArrayList<>();
+        if (allDrones != null) {
+            for (Drone drone : allDrones) {
+                if (drone.getId() != null && droneIdsAtServicePoint.contains(drone.getId())) {
+                    result.add(drone);
+                }
+            }
+        }
+
+        return result;
     }
 
     private static class Node {
