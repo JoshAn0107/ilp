@@ -27,10 +27,8 @@ public class JacksonConfig {
         // Don't serialize dates as timestamps
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        // Pretty-print JSON
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-        // Handle null values gracefully
         mapper.configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, false);
 
         return mapper;

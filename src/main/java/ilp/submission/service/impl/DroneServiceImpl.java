@@ -31,7 +31,6 @@ public class DroneServiceImpl implements DroneService {
                 : "https://ilp-rest-2025-bvh6e9hschfagrgy.ukwest-01.azurewebsites.net/";
         this.restTemplate = restTemplate;
     }
-
     @Override
     public List<Drone> getAllDrones() {
         String url = ilpEndpoint + "drones";
@@ -43,6 +42,7 @@ public class DroneServiceImpl implements DroneService {
         );
         return response.getBody() != null ? response.getBody() : List.of();
     }
+
 
     @Override
     public List<String> getDronesWithCooling(boolean hasCooling) {

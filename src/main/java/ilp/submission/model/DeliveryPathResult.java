@@ -1,5 +1,6 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
@@ -79,7 +80,7 @@ public class DeliveryPathResult {
         @JsonProperty("droneId")
         private String droneId;
 
-        @JsonProperty("servicePoint")
+        @JsonIgnore
         private LngLat servicePoint;
 
         @JsonProperty("deliveries")
@@ -88,18 +89,9 @@ public class DeliveryPathResult {
         @JsonProperty("path")
         private List<LngLat> path;
 
-        @JsonProperty("totalMoves")
+        @JsonIgnore
         private int totalMoves;
 
-        public DronePathInfo() {
-        }
-
-        public DronePathInfo(String droneId, List<DeliveryInfo> deliveries) {
-            this.droneId = droneId;
-            this.deliveries = deliveries != null ? List.copyOf(deliveries) : List.of();
-            this.path = List.of();
-            this.totalMoves = 0;
-        }
 
         public DronePathInfo(String droneId, LngLat servicePoint, List<DeliveryInfo> deliveries, List<LngLat> path, int totalMoves) {
             this.droneId = droneId;
