@@ -545,21 +545,19 @@ class GeographicalControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/nextPosition with negative angle should work (-90 = 270)")
+    @DisplayName("POST /api/v1/nextPosition with negative angle should return 400")
     void testNextPosition_NegativeAngle() throws Exception {
         String requestBody = """
-                {
-                    "start": {"lng": 0.0, "lat": 0.0},
-                    "angle": -90
-                }
-                """;
+            {
+                "start": {"lng": 0.0, "lat": 0.0},
+                "angle": -90
+            }
+            """;
 
         mockMvc.perform(post("/api/v1/nextPosition")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lng").isNumber())
-                .andExpect(jsonPath("$.lat").value(lessThan(0.0)));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
