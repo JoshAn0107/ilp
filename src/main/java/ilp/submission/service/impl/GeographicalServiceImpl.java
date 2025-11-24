@@ -8,15 +8,7 @@ import org.springframework.stereotype.Service;
 import java.util.Objects;
 
 /**
- * Production implementation of geographical service operations.
- *
- * <p>This implementation delegates domain logic to the models themselves
- * (LngLat, Region) following Domain-Driven Design principles.</p>
- *
- * <p>Thread-safe and stateless.</p>
- *
- * @author ILP Team
- * @version 1.0
+ *This is the implementation of geographical service operations.
  */
 @Service
 public class GeographicalServiceImpl implements GeographicalService {

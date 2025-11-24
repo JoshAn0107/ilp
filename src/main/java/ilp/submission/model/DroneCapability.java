@@ -1,5 +1,6 @@
 package ilp.submission.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -32,7 +33,7 @@ public class DroneCapability {
     @JsonProperty("costFinal")
     private double costFinal;
 
-    @JsonProperty("availability")
+    @JsonIgnore
     private List<DayAvailability> availability;
 
     public DroneCapability() {

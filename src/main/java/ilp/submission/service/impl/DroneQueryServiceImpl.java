@@ -52,20 +52,33 @@ public class DroneQueryServiceImpl implements DroneQueryService {
 
     @Override
     public List<String> queryByMultipleAttributes(List<QueryAttribute> queries) {
-        List<Drone> drones = ilpRestClient.fetchDrones();
-        return drones.stream()
-                .filter(drone -> matchesAllQueries(drone, queries))
+        if (queries == null || queries.isEmpty()) {
+            return ilpRestClient.fetchDrones().stream()
+                    .map(Drone::getId)
+                    .collect(Collectors.toList());
+        }
+
+        // Start with all drones
+        List<Drone> result = ilpRestClient.fetchDrones();
+
+        // Iteratively filter by each query attribute (AND logic)
+        // Each query narrows down the result set
+        for (QueryAttribute query : queries) {
+            result = result.stream()
+                    .filter(drone -> matchesAttribute(drone, query.getAttribute(),
+                            query.getOperator(), query.getValue()))
+                    .collect(Collectors.toList());
+
+            // Early exit if no drones remain
+            if (result.isEmpty()) {
+                return List.of();
+            }
+        }
+
+        // Return drone IDs from final filtered set
+        return result.stream()
                 .map(Drone::getId)
                 .collect(Collectors.toList());
-    }
-
-    private boolean matchesAllQueries(Drone drone, List<QueryAttribute> queries) {
-        if (queries == null || queries.isEmpty()) {
-            return true;
-        }
-        return queries.stream()
-                .allMatch(query -> matchesAttribute(drone, query.getAttribute(),
-                        query.getOperator(), query.getValue()));
     }
 
     private boolean matchesAttribute(Drone drone, String attribute, String operator, String value) {

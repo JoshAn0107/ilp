@@ -124,7 +124,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
 
             // Assign dispatches to drones at this service point
             List<List<MedDispatchRec>> droneAssignments = assignDispatchesToDrones(
-                    servicePointDispatches, servicePointDrones);
+                    servicePointDispatches, servicePointDrones, servicePointLocation);
 
             // Calculate paths for each drone at this service point
             for (int droneIndex = 0; droneIndex < droneAssignments.size(); droneIndex++) {
@@ -136,7 +136,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 // Get drone ID
                 String droneId;
                 if (servicePointDrones != null && droneIndex < servicePointDrones.size() &&
-                    servicePointDrones.get(droneIndex).getId() != null) {
+                        servicePointDrones.get(droneIndex).getId() != null) {
                     droneId = servicePointDrones.get(droneIndex).getId();
                 } else {
                     droneId = "SP" + servicePointId + "-D" + (droneIndex + 1);
@@ -163,7 +163,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
 
                     // Debug logging
                     System.out.println("  Processing dispatch " + dispatch.getId() +
-                        ": pickup=" + pickupLocation + ", delivery=" + deliveryLocation);
+                            ": pickup=" + pickupLocation + ", delivery=" + deliveryLocation);
 
                     // Use default locations if missing
                     if (pickupLocation == null) {
@@ -185,21 +185,22 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                     flightPath.addAll(toPickup);
 
                     // Skip first point of toDelivery to avoid duplicate at pickup
-                    // (toPickup ends at pickupLocation, toDelivery starts at pickupLocation)
                     for (int i = 1; i < toDelivery.size(); i++) {
                         flightPath.add(toDelivery.get(i));
                     }
 
-                    // Add hover (duplicate location to indicate delivery)
-                    if (!flightPath.isEmpty()) {
-                        flightPath.add(flightPath.get(flightPath.size() - 1));
+                    // Ensure delivery location is in the path
+                    if (flightPath.isEmpty() || !flightPath.get(flightPath.size() - 1).equals(deliveryLocation)) {
+                        flightPath.add(deliveryLocation);
                     }
+
+                    // Add hover (duplicate delivery location to indicate delivery)
+                    flightPath.add(deliveryLocation);
 
                     // If this is the last delivery, add return path to service point
                     if (isLastDelivery && !deliveryLocation.equals(servicePointLocation)) {
                         List<LngLat> returnPath = findPath(deliveryLocation, servicePointLocation, noFlyZones);
                         // Skip first point of return path to avoid duplicate at delivery location
-                        // (flightPath ends at deliveryLocation, returnPath starts at deliveryLocation)
                         for (int i = 1; i < returnPath.size(); i++) {
                             flightPath.add(returnPath.get(i));
                         }
@@ -208,7 +209,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                     // Add to combined path (skip first point if it duplicates the last point)
                     for (int i = 0; i < flightPath.size(); i++) {
                         if (i == 0 && !combinedPath.isEmpty() &&
-                            combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
+                                combinedPath.get(combinedPath.size() - 1).equals(flightPath.get(i))) {
                             continue;
                         }
                         combinedPath.add(flightPath.get(i));
@@ -240,16 +241,19 @@ public class PathCalculationServiceImpl implements PathCalculationService {
      * - Drone capabilities (cooling, heating, capacity)
      * - Max moves constraint
      * - Minimizing drone usage
+     *
+     * CORRECTED: Capacity is NOT accumulated in chained deliveries since items
+     * are delivered before picking up the next one.
      */
-    private List<List<MedDispatchRec>> assignDispatchesToDrones(List<MedDispatchRec> dispatches, List<Drone> drones) {
+    private List<List<MedDispatchRec>> assignDispatchesToDrones(
+            List<MedDispatchRec> dispatches,
+            List<Drone> drones,
+            LngLat servicePointLocation) {
+
         // Track state for each drone
         Map<Integer, Set<String>> droneTimeSlots = new HashMap<>();
-        Map<Integer, Double> droneCapacityUsed = new HashMap<>();
         Map<Integer, Integer> droneEstimatedMoves = new HashMap<>();
         List<List<MedDispatchRec>> assignments = new ArrayList<>();
-
-        // Get default start location for move estimation
-        LngLat defaultStart = new LngLat(-3.186874, 55.944494);
 
         // Determine available drones
         int maxDrones = drones != null && !drones.isEmpty() ? drones.size() : dispatches.size();
@@ -263,11 +267,11 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             boolean requiresCooling = req != null && req.requiresCooling();
             boolean requiresHeating = req != null && req.requiresHeating();
 
-            // Estimate moves for this dispatch (round trip from start to delivery)
+            // Estimate moves for this dispatch (round trip from service point to delivery)
             LngLat deliveryLoc = dispatch.getDeliveryLocation();
             int estimatedMoves = 0;
             if (deliveryLoc != null) {
-                double dist = distance(defaultStart, deliveryLoc);
+                double dist = distance(servicePointLocation, deliveryLoc);
                 estimatedMoves = (int) Math.ceil(dist / MOVE_DISTANCE) * 2; // Round trip
             }
 
@@ -297,13 +301,12 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                             continue; // Drone doesn't have heating
                         }
 
-                        // Check capacity
-                        double usedCapacity = droneCapacityUsed.getOrDefault(i, 0.0);
-                        if (usedCapacity + requiredCapacity > cap.getCapacity()) {
-                            continue; // Not enough capacity
+                        // Check capacity (NOT accumulated - each delivery is independent)
+                        if (requiredCapacity > cap.getCapacity()) {
+                            continue; // Not enough capacity for this single item
                         }
 
-                        // Check max moves constraint
+                        // Check max moves constraint (accumulated for chained deliveries)
                         int currentMoves = droneEstimatedMoves.getOrDefault(i, 0);
                         if (cap.getMaxMoves() > 0 && currentMoves + estimatedMoves > cap.getMaxMoves()) {
                             continue; // Would exceed max moves
@@ -315,9 +318,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 assignedDrone = i;
                 occupiedSlots.add(timeSlot);
 
-                // Update capacity and moves used
-                double currentUsed = droneCapacityUsed.getOrDefault(i, 0.0);
-                droneCapacityUsed.put(i, currentUsed + requiredCapacity);
+                // Update moves used (but NOT capacity - items delivered individually)
                 int currentMoves = droneEstimatedMoves.getOrDefault(i, 0);
                 droneEstimatedMoves.put(i, currentMoves + estimatedMoves);
                 break;
@@ -350,7 +351,6 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                         if (canHandle) {
                             assignedDrone = i;
                             occupiedSlots.add(timeSlot);
-                            droneCapacityUsed.put(i, requiredCapacity);
                             break;
                         }
                     }
@@ -363,7 +363,6 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 Set<String> newSlots = new HashSet<>();
                 newSlots.add(timeSlot);
                 droneTimeSlots.put(assignedDrone, newSlots);
-                droneCapacityUsed.put(assignedDrone, requiredCapacity);
             }
 
             // Ensure we have enough lists
@@ -491,7 +490,8 @@ public class PathCalculationServiceImpl implements PathCalculationService {
         openSet.add(startNode);
         allNodes.put(nodeKey(start), startNode);
 
-        int maxIterations = 10000;
+        // With fixed priority queue logic, A* should find paths efficiently
+        int maxIterations = 20000;
         int iterations = 0;
 
         while (!openSet.isEmpty() && iterations < maxIterations) {
@@ -499,6 +499,10 @@ public class PathCalculationServiceImpl implements PathCalculationService {
             Node current = openSet.poll();
 
             if (isCloseTo(current.position, end)) {
+                // A* successfully found path
+                if (iterations > 5000) {
+                    System.out.println("  A* found path in " + iterations + " iterations (complex path)");
+                }
                 return reconstructPath(current, end);
             }
 
@@ -526,28 +530,39 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                     allNodes.put(key, neighbor);
                     openSet.add(neighbor);
                 } else if (tentativeG < neighbor.gScore) {
+                    // CRITICAL FIX: Remove from queue before updating, then re-add
+                    // This ensures the priority queue reorders based on new fScore
+                    openSet.remove(neighbor);
                     neighbor.parent = current;
                     neighbor.gScore = tentativeG;
                     neighbor.fScore = tentativeG + heuristic(nextPos, end);
+                    openSet.add(neighbor);
                 }
             }
         }
 
-        // No path found, generate direct path with actual moves
-        return generateDirectPath(start, end);
+        // No path found - A* exceeded max iterations or no valid path exists
+        System.err.println("WARNING: A* pathfinding failed after " + iterations + " iterations from " +
+                         start + " to " + end + ". Attempting fallback.");
+        return generateDirectPath(start, end, noFlyZones);
     }
 
     /**
      * Generates a direct path from start to end using compass directions.
-     * Used as fallback when A* cannot find a path around no-fly zones.
+     * This checks for no-fly zones at each step and tries alternative directions if blocked.
+     * Uses a visited set to avoid loops and implements wall-following when stuck.
+     * Used as fallback when A* cannot find a path.
      */
-    private List<LngLat> generateDirectPath(LngLat start, LngLat end) {
+    private List<LngLat> generateDirectPath(LngLat start, LngLat end, List<RestrictedArea> noFlyZones) {
         List<LngLat> path = new ArrayList<>();
         path.add(start);
 
         LngLat current = start;
-        int maxMoves = 1000; // Safety limit
+        int maxMoves = 2000; // Increased safety limit
         int moves = 0;
+        int consecutiveBlocked = 0;
+        Set<String> visited = new HashSet<>();
+        visited.add(nodeKey(start));
 
         while (!isCloseTo(current, end) && moves < maxMoves) {
             // Calculate angle to target
@@ -558,23 +573,77 @@ public class PathCalculationServiceImpl implements PathCalculationService {
                 angleToTarget += 360;
             }
 
-            // Find nearest compass direction
-            double bestAngle = 0;
-            double minDiff = Double.MAX_VALUE;
+            // Sort directions by how close they are to target angle
+            List<Double> sortedDirections = new ArrayList<>();
             for (double angle : DIRECTIONS) {
-                double diff = Math.abs(angle - angleToTarget);
-                if (diff > 180) {
-                    diff = 360 - diff;
-                }
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestAngle = angle;
+                sortedDirections.add(angle);
+            }
+            double finalAngleToTarget = angleToTarget;
+            sortedDirections.sort((a1, a2) -> {
+                double diff1 = Math.abs(a1 - finalAngleToTarget);
+                if (diff1 > 180) diff1 = 360 - diff1;
+                double diff2 = Math.abs(a2 - finalAngleToTarget);
+                if (diff2 > 180) diff2 = 360 - diff2;
+                return Double.compare(diff1, diff2);
+            });
+
+            // Try directions in order of preference, checking for no-fly zones
+            boolean foundValidMove = false;
+            LngLat bestUnvisitedMove = null;
+
+            for (double angle : sortedDirections) {
+                LngLat nextPos = nextPosition(current, angle);
+                String nextKey = nodeKey(nextPos);
+
+                // Check if this move crosses a no-fly zone
+                if (!crossesNoFlyZone(current, nextPos, noFlyZones)) {
+                    // Prefer unvisited positions
+                    if (!visited.contains(nextKey)) {
+                        current = nextPos;
+                        path.add(current);
+                        visited.add(nextKey);
+                        foundValidMove = true;
+                        consecutiveBlocked = 0;
+                        break;
+                    } else if (bestUnvisitedMove == null) {
+                        // Keep track of first valid move even if visited (for last resort)
+                        bestUnvisitedMove = nextPos;
+                    }
                 }
             }
 
-            current = nextPosition(current, bestAngle);
-            path.add(current);
+            // If no unvisited valid move found, use visited position as last resort
+            if (!foundValidMove && bestUnvisitedMove != null) {
+                current = bestUnvisitedMove;
+                path.add(current);
+                foundValidMove = true;
+                consecutiveBlocked++;
+
+                // If we're revisiting positions too much, we're likely stuck in a loop
+                if (consecutiveBlocked > 20) {
+                    System.err.println("ERROR: Stuck in loop trying to reach " + end + " from " + current);
+                    return path;
+                }
+            }
+
+            if (!foundValidMove) {
+                // All directions blocked - we're trapped
+                consecutiveBlocked++;
+                if (consecutiveBlocked > 10) {
+                    System.err.println("ERROR: Cannot find valid path from " + start + " to " + end +
+                                     " - all directions blocked by no-fly zones at " + current);
+                    // Return path to current position (partial path)
+                    return path;
+                }
+                // Hover in place
+                path.add(current);
+            }
+
             moves++;
+        }
+
+        if (!isCloseTo(current, end)) {
+            System.err.println("WARNING: Fallback path reached max moves (" + maxMoves + ") without reaching target");
         }
 
         return path;
@@ -628,10 +697,15 @@ public class PathCalculationServiceImpl implements PathCalculationService {
 
     private boolean crossesNoFlyZone(LngLat from, LngLat to, List<RestrictedArea> noFlyZones) {
         for (RestrictedArea zone : noFlyZones) {
+            // Check if line segment intersects polygon boundary
             if (lineIntersectsPolygon(from, to, zone.getVertices())) {
                 return true;
             }
-            // Also check if endpoint is inside the zone
+            // Check if starting point is inside the zone
+            if (isPointInPolygon(from, zone.getVertices())) {
+                return true;
+            }
+            // Check if endpoint is inside the zone
             if (isPointInPolygon(to, zone.getVertices())) {
                 return true;
             }
@@ -645,9 +719,16 @@ public class PathCalculationServiceImpl implements PathCalculationService {
         }
 
         int n = vertices.size();
+
+        // Check if polygon is closed (first vertex equals last vertex)
+        boolean isClosed = vertices.get(0).equals(vertices.get(n - 1));
+
+        // If closed, exclude the duplicate last vertex from edge checks
+        int edgeCount = isClosed ? n - 1 : n;
+
         boolean inside = false;
 
-        for (int i = 0, j = n - 1; i < n; j = i++) {
+        for (int i = 0, j = edgeCount - 1; i < edgeCount; j = i++) {
             LngLat vi = vertices.get(i);
             LngLat vj = vertices.get(j);
 
@@ -667,14 +748,31 @@ public class PathCalculationServiceImpl implements PathCalculationService {
         }
 
         int n = vertices.size();
-        for (int i = 0; i < n - 1; i++) {
-            if (linesIntersect(p1, p2, vertices.get(i), vertices.get(i + 1))) {
+
+        // Check if polygon is closed (first vertex equals last vertex)
+        boolean isClosed = vertices.get(0).equals(vertices.get(n - 1));
+
+        // If closed, we only need to check edges up to n-1 (excluding the duplicate last vertex)
+        // If open, we need to check all consecutive edges plus the closing edge
+        if (isClosed) {
+            // For closed polygon, check edges: 0-1, 1-2, ..., (n-2)-(n-1)
+            // The last edge (n-1)-0 is already represented as it's the same as (n-1)-(duplicate of 0)
+            for (int i = 0; i < n - 1; i++) {
+                if (linesIntersect(p1, p2, vertices.get(i), vertices.get(i + 1))) {
+                    return true;
+                }
+            }
+        } else {
+            // For open polygon, check consecutive edges
+            for (int i = 0; i < n - 1; i++) {
+                if (linesIntersect(p1, p2, vertices.get(i), vertices.get(i + 1))) {
+                    return true;
+                }
+            }
+            // Check closing edge from last to first vertex
+            if (linesIntersect(p1, p2, vertices.get(n - 1), vertices.get(0))) {
                 return true;
             }
-        }
-        // Check last edge
-        if (linesIntersect(p1, p2, vertices.get(n - 1), vertices.get(0))) {
-            return true;
         }
 
         return false;
@@ -774,7 +872,7 @@ public class PathCalculationServiceImpl implements PathCalculationService {
         if (droneAvailability != null) {
             for (DroneForServicePoint dfsp : droneAvailability) {
                 if (dfsp.getServicePointId() != null &&
-                    dfsp.getServicePointId().equals(servicePointId)) {
+                        dfsp.getServicePointId().equals(servicePointId)) {
                     List<DroneForServicePoint.DroneAvailability> drones = dfsp.getDrones();
                     if (drones != null) {
                         for (DroneForServicePoint.DroneAvailability da : drones) {

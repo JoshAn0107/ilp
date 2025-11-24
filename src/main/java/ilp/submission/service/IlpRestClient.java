@@ -45,6 +45,13 @@ public interface IlpRestClient {
     List<MedDispatchRec> fetchMedDispatchRecords(String date);
 
     /**
+     * Fetches drone availability for service points.
+     *
+     * @return list of drones for service points
+     */
+    List<DroneForServicePoint> fetchDroneAvailability();
+
+    /**
      * Checks if the ILP service is alive.
      *
      * @return true if service is responding, false otherwise
